@@ -49,8 +49,8 @@ export default {
       // Parse and post
       const leadData = parseGreenAcresEmail(htmlBody, subject);
 
-      // Classify — fallback to fetching property page if needed
-      if (!leadData.property_category && leadData.property_url) {
+      // Classify — fallback to fetching property page only when subject gave no usable type
+      if (!leadData.property_category && !leadData.property_type && leadData.property_url) {
         console.log("Fetching property page for classification...");
         const pageText = await fetchPropertyPage(leadData.property_url);
         if (pageText) {
@@ -113,7 +113,7 @@ export default {
 
       const leadData = parseGreenAcresEmail(htmlBody, subject);
 
-      if (!leadData.property_category && leadData.property_url) {
+      if (!leadData.property_category && !leadData.property_type && leadData.property_url) {
         const pageText = await fetchPropertyPage(leadData.property_url);
         if (pageText) {
           const classified = classifyProperty(pageText.toLowerCase());
@@ -142,6 +142,7 @@ async function postToCRM(leadData, env) {
     country: leadData.country || undefined,
     emirate: leadData.city || undefined,
     location: leadData.area_name || undefined,
+    developer: leadData.developer || undefined,
     category: leadData.property_category
       ? leadData.property_category.toLowerCase()
       : undefined,
@@ -243,6 +244,52 @@ function decodeQuotedPrintable(str) {
 // EMAIL PARSER
 // ============================================================
 
+const EMIRATES = [
+  "Abu Dhabi",
+  "Dubai",
+  "Sharjah",
+  "Ajman",
+  "Ras Al Khaimah",
+  "Umm Al Quwain",
+  "Fujairah",
+];
+
+const DEVELOPERS = [
+  "Emaar",
+  "Damac",
+  "Binghatti",
+  "Ora Developers",
+  "Ora Properties",
+  "Reportage",
+  "Danube",
+  "Nakheel",
+  "Azizi",
+  "Samana",
+  "Sobha",
+  "Dubai South",
+];
+
+function matchDeveloper(text) {
+  const t = text.toLowerCase();
+  for (const dev of DEVELOPERS) {
+    if (t.includes(dev.toLowerCase())) return dev;
+  }
+  return null;
+}
+
+function matchEmirate(text) {
+  const t = text.toLowerCase();
+  // Try exact list first, including user-provided variant spelling
+  const aliases = { "ras al khaima": "Ras Al Khaimah", "rak": "Ras Al Khaimah" };
+  for (const [alias, canonical] of Object.entries(aliases)) {
+    if (t.includes(alias)) return canonical;
+  }
+  for (const emirate of EMIRATES) {
+    if (t.includes(emirate.toLowerCase())) return emirate;
+  }
+  return null;
+}
+
 function parseGreenAcresEmail(htmlBody, subject) {
   const data = {};
 
@@ -298,15 +345,22 @@ function parseGreenAcresEmail(htmlBody, subject) {
 
   // --- Property Details ---
   // "Sharjah : Al Badaia - Hab surface: 245 m² - 4 room - 4 bedroom"
+  // "Abu Dhabi : Al Manhal - Hab surface: 305 m² - Land: 390 m² - 4 room - 4 bedroom"
   const propMatch = textContent.match(
-    /([A-Z][a-zA-Z\s]+?)\s*:\s*([A-Z][a-zA-Z\s]+?)\s*-\s*Hab surface:\s*([\d,.]+)\s*m²\s*-\s*(\d+)\s*room\s*-\s*(\d+)\s*bedroom/
+    /([A-Z][a-zA-Z\s]+?)\s*:\s*([A-Z][a-zA-Z\s]+?)\s*-\s*Hab surface:\s*([\d,.]+)\s*m²(\s*-\s*Land:\s*[\d,.]+\s*m²)?\s*-\s*(\d+)\s*room\s*-\s*(\d+)\s*bedroom/
   );
   if (propMatch) {
-    data.city = propMatch[1].trim();
+    data.city = matchEmirate(propMatch[1].trim()) || propMatch[1].trim();
     data.area_name = propMatch[2].trim();
     data.surface_m2 = propMatch[3].trim();
-    data.rooms = propMatch[4].trim();
-    data.bedrooms = propMatch[5].trim();
+    data.has_land = !!propMatch[4]; // presence of Land field → villa or townhouse
+    data.rooms = propMatch[5].trim();
+    data.bedrooms = propMatch[6].trim();
+  }
+
+  // Fallback: if regex missed city, scan full text for a known emirate
+  if (!data.city) {
+    data.city = matchEmirate(textContent) || undefined;
   }
 
   // Price — must contain commas (formatted number) or be followed by AED/currency
@@ -333,12 +387,25 @@ function parseGreenAcresEmail(htmlBody, subject) {
   );
   if (profileMatch) data.profile_analysis_url = profileMatch[1];
 
-  // --- Classify ---
+  // Combined text for classification
   const searchable = [data.property_title || "", subject, textContent]
     .join(" ")
     .toLowerCase();
 
-  data.property_category = classifyProperty(searchable);
+  // --- Developer ---
+  data.developer = matchDeveloper(searchable) || undefined;
+
+  // --- Classify ---
+  // has_land is a hard signal — property has a plot, so it's villa or townhouse
+  if (data.has_land) {
+    const type = (data.property_type || "").toLowerCase();
+    data.property_category =
+      type.includes("townhouse") || type.includes("town house")
+        ? "townhouse"
+        : "villa";
+  } else {
+    data.property_category = classifyProperty(searchable);
+  }
 
   // --- Metadata ---
   data.source = "Green-Acres";
