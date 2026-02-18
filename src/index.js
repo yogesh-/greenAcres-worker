@@ -274,7 +274,11 @@ const DEVELOPERS = [
 "Aldar",
 "Arada",
 "Omniyat",
-
+"MAG Property Development",
+"Nshama","Select Group",
+"Wasl Properties",
+"Al Habtoor Group",
+"Majid Al Futtaim",
 ];
 
 function matchDeveloper(text) {
