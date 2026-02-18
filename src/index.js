@@ -266,7 +266,15 @@ const DEVELOPERS = [
   "Azizi",
   "Samana",
   "Sobha",
+  "Sobha Realty",
   "Dubai South",
+  "Meraas",
+  "Ellington",
+"Deyaar",
+"Aldar",
+"Arada",
+"Omniyat",
+
 ];
 
 function matchDeveloper(text) {
