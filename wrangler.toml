@@ -1,0 +1,12 @@
+name = "greenacres-leads-2-crm"
+account_id = "bbf7434dcd145d7edec9a4318079d66f"
+main = "src/index.js"
+compatibility_date = "2024-09-01"
+
+# Environment variables — set via Cloudflare dashboard or wrangler secret
+# DO NOT put actual secrets here. Use: wrangler secret put CRM_API_KEY
+[vars]
+CRM_API_URL = "https://erp.infinityrealty.ae/api/crm/external/leads"
+
+# Email routing — this tells Cloudflare this worker handles emails
+# The actual email address is configured in the Cloudflare dashboard
